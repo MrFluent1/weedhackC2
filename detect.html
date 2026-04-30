@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ETH URL Decoder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      background: #0f1115;
+      color: #e8e8e8;
+    }
+
+    .box {
+      background: #171b22;
+      border: 1px solid #2a2f3a;
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    #result {
+      font-size: 1.25rem;
+      word-break: break-all;
+    }
+
+    a {
+      color: #72a7ff;
+    }
+
+    .bad {
+      color: #ff7777;
+    }
+
+    .warn {
+      color: #ffcc66;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Decoded URL</h1>
+    <div id="result" class="warn">Loading...</div>
+  </div>
+
+<script>
+const RPC_URL = "https://ethereum-rpc.publicnode.com";
+const CONTRACT = "0x1280a841Fbc1F883365d3C83122260E0b2995B74";
+const CALLDATA = "0xce6d41de";
+
+function hexToBytes(hex) {
+  if (!hex.startsWith("0x")) {
+    throw new Error("RPC result was not 0x-prefixed hex");
+  }
+
+  hex = hex.slice(2);
+
+  if (hex.length % 2 !== 0) {
+    throw new Error("Hex string has odd length");
+  }
+
+  const out = new Uint8Array(hex.length / 2);
+
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+
+  return out;
+}
+
+function bytesToBigInt(bytes) {
+  let value = 0n;
+
+  for (const b of bytes) {
+    value = (value << 8n) + BigInt(b);
+  }
+
+  return value;
+}
+
+function decodeAbiDynamicSingle(bytes) {
+  if (bytes.length < 64) {
+    throw new Error("ABI data too short");
+  }
+
+  const offset = Number(bytesToBigInt(bytes.slice(0, 32)));
+
+  if (offset + 32 > bytes.length) {
+    throw new Error("ABI offset outside data");
+  }
+
+  const length = Number(bytesToBigInt(bytes.slice(offset, offset + 32)));
+  const start = offset + 32;
+  const end = start + length;
+
+  if (end > bytes.length) {
+    throw new Error("ABI payload length exceeds data size");
+  }
+
+  return bytes.slice(start, end);
+}
+
+function utf8Decode(bytes) {
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+function tryBase64Decode(s) {
+  try {
+    let cleaned = s.trim();
+
+    const pad = cleaned.length % 4;
+    if (pad) {
+      cleaned += "=".repeat(4 - pad);
+    }
+
+    const raw = atob(cleaned);
+    const bytes = new Uint8Array(raw.length);
+
+    for (let i = 0; i < raw.length; i++) {
+      bytes[i] = raw.charCodeAt(i);
+    }
+
+    return utf8Decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+function extractFirstUrlOrDomain(text) {
+  const urlRegex = /\bhttps?:\/\/[^\s"'<>|)]+/i;
+  const domainRegex = /\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}\b/;
+
+  const urlMatch = text.match(urlRegex);
+  if (urlMatch) {
+    return urlMatch[0].replace(/[.,;:]+$/, "");
+  }
+
+  const domainMatch = text.match(domainRegex);
+  if (domainMatch) {
+    return domainMatch[0].replace(/[.,;:]+$/, "");
+  }
+
+  return null;
+}
+
+async function run() {
+  const resultEl = document.getElementById("result");
+
+  try {
+    const body = {
+      jsonrpc: "2.0",
+      method: "eth_call",
+      params: [
+        {
+          to: CONTRACT,
+          data: CALLDATA
+        },
+        "latest"
+      ],
+      id: 1
+    };
+
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      throw new Error(`RPC HTTP error: ${res.status}`);
+    }
+
+    const json = await res.json();
+
+    if (json.error) {
+      throw new Error(JSON.stringify(json.error));
+    }
+
+    const abiBytes = hexToBytes(json.result);
+    const payload = decodeAbiDynamicSingle(abiBytes);
+    const decoded = utf8Decode(payload);
+
+    let combinedText = decoded;
+
+    if (decoded.includes("|")) {
+      const parts = decoded.split("|");
+
+      if (parts.length >= 2) {
+        combinedText += "\n" + tryBase64Decode(parts[1]);
+      }
+    }
+
+    const found = extractFirstUrlOrDomain(combinedText);
+
+    if (!found) {
+      resultEl.className = "bad";
+      resultEl.textContent = "No URL or domain found.";
+      return;
+    }
+
+    resultEl.className = "";
+
+    if (found.startsWith("http://") || found.startsWith("https://")) {
+      resultEl.innerHTML = `<a href="${found}" target="_blank" rel="noopener noreferrer">${found}</a>`;
+    } else {
+      const url = `https://${found}`;
+      resultEl.innerHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer">${found}</a>`;
+    }
+  } catch (err) {
+    resultEl.className = "bad";
+    resultEl.textContent = `Error: ${err.message}`;
+  }
+}
+
+run();
+</script>
+</body>
+</html>
