@@ -14,6 +14,8 @@ RPC_URL = "https://ethereum-rpc.publicnode.com"
 CONTRACT = "0x1280a841Fbc1F883365d3C83122260E0b2995B74"
 CALLDATA = "0xce6d41de"
 MAX_INDICATOR_LENGTH = 2048
+MAX_ARTIFACT_BYTES = 1_048_576
+RPC_TIMEOUT_SECONDS = 30
 DOMAIN_RE = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$")
 UNSAFE_TEXT_RE = re.compile(r"[\x00-\x1f\x7f<>\"'`]")
 
@@ -51,6 +53,7 @@ def eth_call() -> str:
         check=True,
         capture_output=True,
         text=True,
+        timeout=RPC_TIMEOUT_SECONDS,
     )
 
     obj = json.loads(result.stdout)
@@ -92,15 +95,24 @@ def decode_abi_dynamic_single(data: bytes) -> bytes:
     return data[start:end]
 
 
+def require_safe_artifact_size(data: bytes, label: str) -> None:
+    if len(data) > MAX_ARTIFACT_BYTES:
+        raise ValueError(
+            f"{label} is too large to write: "
+            f"{len(data)} bytes > {MAX_ARTIFACT_BYTES} bytes"
+        )
+
+
 def try_base64_decode(s: str) -> str:
     cleaned = s.strip()
     padded = cleaned + ("=" * ((-len(cleaned)) % 4))
 
     try:
-        raw = base64.b64decode(padded, validate=False)
+        raw = base64.b64decode(padded, validate=True)
     except binascii.Error:
         return ""
 
+    require_safe_artifact_size(raw, "Base64 decoded field")
     Path("eth_call_field2_base64_decoded.bin").write_bytes(raw)
 
     try:
@@ -219,6 +231,7 @@ def main() -> None:
 
     data = bytes.fromhex(hx[2:])
     payload = decode_abi_dynamic_single(data)
+    require_safe_artifact_size(payload, "Decoded ABI payload")
 
     decoded = payload.decode("utf-8", errors="replace")
 
