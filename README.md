@@ -55,7 +55,7 @@ Raw decoded payload files and Base64-decoded field artifacts are intentionally n
 When GitHub Pages is enabled for this repository, the static page is served from:
 
 ```text
-https://mrfluent1.github.io/weedhackC2/
+https://github.com/MrFluent1/Weedhack-C2-Tracking
 ```
 
 If the page is not available, check the repository Actions tab for the `Deploy GitHub Pages` workflow and confirm Pages is enabled for the repository.
