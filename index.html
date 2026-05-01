@@ -116,6 +116,11 @@
       margin-top: 0.5rem;
     }
 
+    .disclaimer {
+      margin: 0;
+      color: var(--muted);
+    }
+
     code {
       color: var(--accent);
       font: 0.95em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -160,6 +165,13 @@
         <li>The decoded text is split on <code>|</code>; the second field is also Base64-decoded when present.</li>
         <li>URLs and domains are extracted with regex and the scheduled workflow appends them to <code>domains.log</code>.</li>
       </ol>
+    </section>
+
+    <section class="box" style="margin-top: 1rem;">
+      <h2>AI Usage Disclosure</h2>
+      <p class="disclaimer">
+        AI assistance was used to help create parts of this project, including page structure, styling, decoding logic, and automation workflow code. The contract address, calldata, decoded output, and logged values come from the configured Ethereum RPC call and repository workflow.
+      </p>
     </section>
 
     <section class="box" style="margin-top: 1rem;">
@@ -279,6 +291,36 @@ function renderDomain(el, value) {
   el.textContent = value;
 }
 
+function formatTimestamp(value) {
+  if (!value) {
+    return "No timestamp";
+  }
+
+  const normalized = value.replace(/(\.\d{3})\d+(?=[+-]\d{2}:\d{2}$|Z$)/, "$1");
+  const date = new Date(normalized);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const pad = (part) => String(part).padStart(2, "0");
+
+  return [
+    date.getUTCFullYear(),
+    "-",
+    pad(date.getUTCMonth() + 1),
+    "-",
+    pad(date.getUTCDate()),
+    " ",
+    pad(date.getUTCHours()),
+    ":",
+    pad(date.getUTCMinutes()),
+    ":",
+    pad(date.getUTCSeconds()),
+    " UTC"
+  ].join("");
+}
+
 async function loadLiveValue() {
   const resultEl = document.getElementById("live-result");
   const metaEl = document.getElementById("live-meta");
@@ -368,7 +410,7 @@ async function loadLatestLog() {
 
     const latest = JSON.parse(lines[lines.length - 1]);
     renderDomain(resultEl, latest.domain_or_url || "");
-    metaEl.innerHTML = `${latest.timestamp || "No timestamp"} · <a href="domains.log">domains.log</a>`;
+    metaEl.innerHTML = `${formatTimestamp(latest.timestamp)} · <a href="domains.log">domains.log</a>`;
   } catch (err) {
     resultEl.className = "value bad";
     resultEl.textContent = `Error: ${err.message}`;
