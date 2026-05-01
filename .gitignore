@@ -1,4 +1,6 @@
 __pycache__/
 *.py[cod]
 eth_call_decoded_payload.bin
+eth_call_decoded_payload.txt
 eth_call_field2_base64_decoded.bin
+eth_call_field2_base64_decoded.txt

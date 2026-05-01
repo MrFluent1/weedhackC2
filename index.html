@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>ETH Contract Domain Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-R6h3pTn0o74FWvQcp2k6a0t4tXgx7j0BDiuk0OXQmLg='; style-src 'sha256-1HC27TBWtHcLqXvmA6H0jWLlKfZNh8XDpr/Ue0JaogE='; connect-src 'self' https://ethereum-rpc.publicnode.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-B0beg+ghnFGpO858DqPX1KL3mXizEdLo1ilQ5b0leLY='; style-src 'sha256-1HC27TBWtHcLqXvmA6H0jWLlKfZNh8XDpr/Ue0JaogE='; connect-src 'self' https://ethereum-rpc.publicnode.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
   <meta name="referrer" content="no-referrer" />
 
   <style>
@@ -157,9 +157,9 @@
       </section>
 
       <section class="box">
-        <h2>Latest Logged Value</h2>
+        <h2>Latest Workflow Value</h2>
         <div id="log-result" class="value warn">Loading...</div>
-        <div id="log-meta" class="meta"><a href="domains.log">domains.log</a></div>
+        <div id="log-meta" class="meta"><a href="latest.json">latest.json</a></div>
       </section>
     </div>
 
@@ -337,13 +337,18 @@ function truncateText(value) {
 
 function setLogMeta(timestamp) {
   const metaEl = document.getElementById("log-meta");
+  const latestLink = document.createElement("a");
   const logLink = document.createElement("a");
 
+  latestLink.href = "latest.json";
+  latestLink.textContent = "latest.json";
   logLink.href = "domains.log";
   logLink.textContent = "domains.log";
 
   metaEl.replaceChildren(
     document.createTextNode(`${formatTimestamp(timestamp)} · `),
+    latestLink,
+    document.createTextNode(" · "),
     logLink
   );
 }
@@ -458,27 +463,19 @@ async function loadLatestLog() {
   const metaEl = document.getElementById("log-meta");
 
   try {
-    const res = await fetch(`domains.log?ts=${Date.now()}`, {
+    const res = await fetch(`latest.json?ts=${Date.now()}`, {
       cache: "no-store"
     });
 
     if (!res.ok) {
-      throw new Error(`domains.log HTTP error: ${res.status}`);
+      throw new Error(`latest.json HTTP error: ${res.status}`);
     }
 
-    const lines = (await res.text())
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (!lines.length) {
-      renderDomain(resultEl, "");
-      setLogMeta("");
-      return;
-    }
-
-    const latest = JSON.parse(lines[lines.length - 1]);
-    renderDomain(resultEl, normalizeIndicator(latest.domain_or_url || ""));
+    const latest = await res.json();
+    const latestIndicator = Array.isArray(latest.indicators)
+      ? latest.indicators[0] || ""
+      : "";
+    renderDomain(resultEl, normalizeIndicator(latestIndicator));
     setLogMeta(latest.timestamp);
   } catch (err) {
     resultEl.className = "value bad";

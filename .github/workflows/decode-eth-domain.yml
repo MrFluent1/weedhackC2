@@ -8,9 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: decode-eth-domain
+  cancel-in-progress: true
+
 jobs:
   decode:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repo
@@ -25,7 +30,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add domains.log eth_call_decoded_payload.txt eth_call_field2_base64_decoded.txt || true
+          git add domains.log latest.json latest_payload_sha256.txt || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit."

@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import hashlib
 import json
 import re
 import subprocess
@@ -15,6 +16,9 @@ CONTRACT = "0x1280a841Fbc1F883365d3C83122260E0b2995B74"
 CALLDATA = "0xce6d41de"
 MAX_INDICATOR_LENGTH = 2048
 MAX_ARTIFACT_BYTES = 1_048_576
+MAX_RPC_HEX_CHARS = 2 + (MAX_ARTIFACT_BYTES + 128) * 2
+MAX_INDICATORS = 128
+MAX_LOG_ROWS = 5000
 RPC_TIMEOUT_SECONDS = 30
 DOMAIN_RE = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$")
 UNSAFE_TEXT_RE = re.compile(r"[\x00-\x1f\x7f<>\"'`]")
@@ -103,31 +107,45 @@ def require_safe_artifact_size(data: bytes, label: str) -> None:
         )
 
 
-def try_base64_decode(s: str) -> str:
+def parse_rpc_hex(hx: str) -> bytes:
+    if not isinstance(hx, str) or not hx.startswith("0x"):
+        raise ValueError("RPC result is not a 0x-prefixed hex string")
+
+    if len(hx) % 2 != 0:
+        raise ValueError("RPC result has odd hex length")
+
+    if len(hx) > MAX_RPC_HEX_CHARS:
+        raise ValueError(f"RPC result too large: {len(hx)} chars")
+
+    try:
+        return bytes.fromhex(hx[2:])
+    except ValueError as e:
+        raise ValueError("RPC result contains invalid hex") from e
+
+
+def inspect_base64_field(s: str) -> dict[str, object]:
     cleaned = s.strip()
     padded = cleaned + ("=" * ((-len(cleaned)) % 4))
 
     try:
         raw = base64.b64decode(padded, validate=True)
     except binascii.Error:
-        return ""
+        return {
+            "field2_base64_valid": False,
+            "field2_decoded_len": 0,
+            "field2_decoded_sha256": None,
+        }
 
     require_safe_artifact_size(raw, "Base64 decoded field")
-    Path("eth_call_field2_base64_decoded.bin").write_bytes(raw)
 
-    try:
-        text = raw.decode("utf-8")
-        Path("eth_call_field2_base64_decoded.txt").write_text(
-            text,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return text
-    except UnicodeDecodeError:
-        return ""
+    return {
+        "field2_base64_valid": True,
+        "field2_decoded_len": len(raw),
+        "field2_decoded_sha256": hashlib.sha256(raw).hexdigest(),
+    }
 
 
-def normalize_indicator(value: str) -> str:
+def normalize_indicator(value: str) -> dict[str, str] | None:
     cleaned = value.rstrip(".,;:").strip()
 
     if (
@@ -135,78 +153,203 @@ def normalize_indicator(value: str) -> str:
         or len(cleaned) > MAX_INDICATOR_LENGTH
         or UNSAFE_TEXT_RE.search(cleaned)
     ):
-        return ""
+        return None
 
     if cleaned.lower().startswith(("http://", "https://")):
         parsed = urlparse(cleaned)
 
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            return ""
+            return None
 
-        if not DOMAIN_RE.match(parsed.hostname):
-            return ""
+        hostname = parsed.hostname.rstrip(".").lower()
 
-        return cleaned
+        if not DOMAIN_RE.match(hostname):
+            return None
 
-    if not DOMAIN_RE.match(cleaned):
-        return ""
+        return {
+            "indicator": hostname,
+            "indicator_type": "domain",
+            "source_url": cleaned,
+        }
 
-    return cleaned
+    domain = cleaned.rstrip(".").lower()
+
+    if not DOMAIN_RE.match(domain):
+        return None
+
+    return {
+        "indicator": domain,
+        "indicator_type": "domain",
+    }
 
 
-def extract_domains_and_urls(text: str) -> list[str]:
-    found = set()
+def extract_indicator_records(text: str) -> list[dict[str, str]]:
+    found: dict[str, dict[str, str]] = {}
 
     url_re = re.compile(r"\bhttps?://[^\s\"'<>|)]+", re.IGNORECASE)
     domain_re = re.compile(r"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}\b")
 
     for item in url_re.findall(text):
-        normalized = normalize_indicator(item)
+        record = normalize_indicator(item)
 
-        if normalized:
-            found.add(normalized)
+        if record:
+            found[record["indicator"]] = record
 
     for item in domain_re.findall(text):
-        normalized = normalize_indicator(item)
+        record = normalize_indicator(item)
 
-        if normalized:
-            found.add(normalized)
+        if record and record["indicator"] not in found:
+            found[record["indicator"]] = record
 
-    return sorted(found)
+    return [found[key] for key in sorted(found)]
 
 
-def append_log(domains: list[str]) -> None:
+def read_logged_indicators(log_path: Path) -> set[str]:
+    existing = set()
+
+    if not log_path.exists():
+        return existing
+
+    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        value = obj.get("indicator") or obj.get("domain_or_url")
+
+        if not isinstance(value, str):
+            continue
+
+        record = normalize_indicator(value)
+
+        if record:
+            existing.add(record["indicator"])
+
+    return existing
+
+
+def append_log(records: list[dict[str, str]]) -> bool:
     now = datetime.now(timezone.utc).isoformat()
 
     log_path = Path("domains.log")
-
-    existing = set()
-    if log_path.exists():
-        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            existing.add(line.strip())
+    existing = read_logged_indicators(log_path)
 
     rows = []
 
-    if domains:
-        for domain in domains:
-            row = json.dumps(
-                {
-                    "timestamp": now,
-                    "domain_or_url": domain,
-                    "source": "eth_call",
-                    "contract": CONTRACT,
-                    "calldata": CALLDATA,
-                },
-                sort_keys=True,
-            )
+    for record in records:
+        indicator = record["indicator"]
 
-            if row not in existing:
-                rows.append(row)
-    else:
+        if indicator in existing:
+            continue
+
+        obj = {
+            "timestamp": now,
+            "indicator": indicator,
+            "indicator_type": record["indicator_type"],
+            "source": "eth_call",
+            "contract": CONTRACT,
+            "calldata": CALLDATA,
+        }
+
+        if "source_url" in record:
+            obj["source_url"] = record["source_url"]
+
+        rows.append(json.dumps(obj, sort_keys=True))
+        existing.add(indicator)
+
+    if rows:
+        existing_lines = []
+
+        if log_path.exists():
+            existing_lines = log_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines()
+
+        retained_lines = existing_lines[-max(MAX_LOG_ROWS - len(rows), 0):]
+        rows = rows[-MAX_LOG_ROWS:]
+
+        with log_path.open("w", encoding="utf-8") as f:
+            for line in retained_lines:
+                if line.strip():
+                    f.write(line + "\n")
+            for row in rows:
+                f.write(row + "\n")
+
+    return bool(rows)
+
+
+def read_latest_indicators(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return []
+
+    indicators = obj.get("indicators")
+
+    if not isinstance(indicators, list):
+        return []
+
+    return sorted(item for item in indicators if isinstance(item, str))
+
+
+def write_latest(
+    records: list[dict[str, str]],
+    payload: bytes,
+    field2_metadata: dict[str, object],
+) -> bool:
+    latest_path = Path("latest.json")
+    payload_hash = hashlib.sha256(payload).hexdigest()
+    indicators = sorted(record["indicator"] for record in records)
+
+    if indicators == read_latest_indicators(latest_path):
+        return False
+
+    obj = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "indicators": indicators,
+        "records": records,
+        "payload_len": len(payload),
+        "payload_sha256": payload_hash,
+        "source": "eth_call",
+        "contract": CONTRACT,
+        "calldata": CALLDATA,
+        **field2_metadata,
+    }
+
+    if not records:
+        obj["note"] = "No domain or URL extracted"
+
+    latest_path.write_text(
+        json.dumps(obj, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    Path("latest_payload_sha256.txt").write_text(
+        payload_hash + "\n",
+        encoding="utf-8",
+    )
+
+    return True
+
+
+def write_empty_log_if_missing() -> None:
+    log_path = Path("domains.log")
+
+    if not log_path.exists():
         row = json.dumps(
             {
-                "timestamp": now,
-                "domain_or_url": None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "indicator": None,
+                "indicator_type": None,
                 "source": "eth_call",
                 "contract": CONTRACT,
                 "calldata": CALLDATA,
@@ -214,52 +357,47 @@ def append_log(domains: list[str]) -> None:
             },
             sort_keys=True,
         )
-
-        rows.append(row)
-
-    if rows:
-        with log_path.open("a", encoding="utf-8") as f:
-            for row in rows:
-                f.write(row + "\n")
+        log_path.write_text(row + "\n", encoding="utf-8")
 
 
 def main() -> None:
     hx = eth_call()
 
-    if not hx.startswith("0x"):
-        raise ValueError("RPC result is not 0x-prefixed hex")
-
-    data = bytes.fromhex(hx[2:])
+    data = parse_rpc_hex(hx)
     payload = decode_abi_dynamic_single(data)
     require_safe_artifact_size(payload, "Decoded ABI payload")
 
     decoded = payload.decode("utf-8", errors="replace")
-
-    Path("eth_call_decoded_payload.bin").write_bytes(payload)
-    Path("eth_call_decoded_payload.txt").write_text(
-        decoded,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-    b64_decoded = ""
+    field2_metadata = {
+        "field2_base64_valid": False,
+        "field2_decoded_len": 0,
+        "field2_decoded_sha256": None,
+    }
 
     if "|" in decoded:
         parts = decoded.split("|")
 
         if len(parts) >= 2:
-            b64_decoded = try_base64_decode(parts[1])
+            field2_metadata = inspect_base64_field(parts[1])
 
-    combined = decoded + "\n" + b64_decoded
-    domains = extract_domains_and_urls(combined)
+    records = extract_indicator_records(decoded)
 
-    append_log(domains)
+    if len(records) > MAX_INDICATORS:
+        raise ValueError(
+            f"Too many indicators extracted: {len(records)} > {MAX_INDICATORS}"
+        )
+
+    log_changed = append_log(records)
+    latest_changed = write_latest(records, payload, field2_metadata)
+    write_empty_log_if_missing()
 
     print(f"Decoded payload length: {len(payload)}")
-    print(f"Extracted domains/URLs: {len(domains)}")
+    print(f"Extracted indicators: {len(records)}")
+    print(f"Log changed: {log_changed}")
+    print(f"Latest changed: {latest_changed}")
 
-    for domain in domains:
-        print(domain)
+    for record in records:
+        print(record["indicator"])
 
 
 if __name__ == "__main__":
