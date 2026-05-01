@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>ETH Contract Domain Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-B0beg+ghnFGpO858DqPX1KL3mXizEdLo1ilQ5b0leLY='; style-src 'sha256-1HC27TBWtHcLqXvmA6H0jWLlKfZNh8XDpr/Ue0JaogE='; connect-src 'self' https://ethereum-rpc.publicnode.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ySqv2RyYQMu0nvUHapKRXjG24kErrI8MYu0ubVISNzo='; style-src 'sha256-1HC27TBWtHcLqXvmA6H0jWLlKfZNh8XDpr/Ue0JaogE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
   <meta name="referrer" content="no-referrer" />
 
   <style>
@@ -146,30 +146,30 @@
   <main>
     <h1>Current C2 Domain for Weedhack</h1>
     <p class="intro">
-      This page shows the latest domain decoded from the configured Ethereum contract and compares it with the value logged by the scheduled GitHub Action.
+      This page shows the latest sanitized domain decoded by the scheduled GitHub Action. Visitor browsers only read static files from this repository and do not call the Ethereum RPC endpoint directly.
     </p>
 
     <div class="grid">
       <section class="box">
         <h2>Current C2 domain for weedhack</h2>
-        <div id="live-result" class="value warn">Loading...</div>
-        <div id="live-meta" class="meta"></div>
+        <div id="current-result" class="value warn">Loading...</div>
+        <div id="current-meta" class="meta"><a href="latest.json">latest.json</a></div>
       </section>
 
       <section class="box">
-        <h2>Latest Workflow Value</h2>
-        <div id="log-result" class="value warn">Loading...</div>
-        <div id="log-meta" class="meta"><a href="latest.json">latest.json</a></div>
+        <h2>Payload Metadata</h2>
+        <div id="payload-hash" class="value warn">Loading...</div>
+        <div id="payload-meta" class="meta"><a href="latest_payload_sha256.txt">latest_payload_sha256.txt</a></div>
       </section>
     </div>
 
     <section class="box section-spaced">
       <h2>How Retrieval Works</h2>
       <ol class="summary">
-        <li>The browser and GitHub Action call <code>eth_call</code> on <code>0x1280a841Fbc1F883365d3C83122260E0b2995B74</code> with calldata <code>0xce6d41de</code>.</li>
+        <li>A scheduled GitHub Action calls <code>eth_call</code> on <code>0x1280a841Fbc1F883365d3C83122260E0b2995B74</code> with calldata <code>0xce6d41de</code>.</li>
         <li>The returned ABI dynamic string is decoded by reading the offset word, length word, and payload bytes.</li>
-        <li>The decoded text is split on <code>|</code>; the second field is also Base64-decoded when present.</li>
-        <li>URLs and domains are extracted with regex and the scheduled workflow appends them to <code>domains.log</code>.</li>
+        <li>The second <code>|</code>-separated field is treated as signature metadata; only its validity, length, and SHA-256 hash are stored.</li>
+        <li>Domains are normalized, de-duplicated, and committed to static JSON/log files consumed by this page.</li>
       </ol>
     </section>
 
@@ -181,95 +181,14 @@
     </section>
 
     <section class="box section-spaced">
-      <h2>Decoded Payload</h2>
-      <pre id="payload">Loading...</pre>
+      <h2>Stored Metadata</h2>
+      <pre id="metadata">Loading...</pre>
     </section>
   </main>
 
 <script>
-const RPC_URL = "https://ethereum-rpc.publicnode.com";
-const CONTRACT = "0x1280a841Fbc1F883365d3C83122260E0b2995B74";
-const CALLDATA = "0xce6d41de";
 const MAX_DISPLAY_TEXT = 4096;
 const MAX_INDICATOR_LENGTH = 2048;
-
-function hexToBytes(hex) {
-  if (!hex || !hex.startsWith("0x")) {
-    throw new Error("RPC result was not 0x-prefixed hex");
-  }
-
-  hex = hex.slice(2);
-
-  if (hex.length % 2 !== 0) {
-    throw new Error("Hex string has odd length");
-  }
-
-  const out = new Uint8Array(hex.length / 2);
-
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-
-  return out;
-}
-
-function bytesToBigInt(bytes) {
-  let value = 0n;
-
-  for (const b of bytes) {
-    value = (value << 8n) + BigInt(b);
-  }
-
-  return value;
-}
-
-function decodeAbiDynamicSingle(bytes) {
-  if (bytes.length < 64) {
-    throw new Error("ABI data too short");
-  }
-
-  const offset = Number(bytesToBigInt(bytes.slice(0, 32)));
-
-  if (offset + 32 > bytes.length) {
-    throw new Error("ABI offset outside data");
-  }
-
-  const length = Number(bytesToBigInt(bytes.slice(offset, offset + 32)));
-  const start = offset + 32;
-  const end = start + length;
-
-  if (end > bytes.length) {
-    throw new Error("ABI payload length exceeds data size");
-  }
-
-  return bytes.slice(start, end);
-}
-
-function utf8Decode(bytes) {
-  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-}
-
-function tryBase64Decode(s) {
-  try {
-    let cleaned = s.trim();
-    const pad = cleaned.length % 4;
-
-    if (pad) {
-      cleaned += "=".repeat(4 - pad);
-    }
-
-    const raw = atob(cleaned);
-    const bytes = new Uint8Array(raw.length);
-
-    for (let i = 0; i < raw.length; i++) {
-      bytes[i] = raw.charCodeAt(i);
-    }
-
-    return utf8Decode(bytes);
-  } catch {
-    return "";
-  }
-}
 
 function hasUnsafeText(value) {
   return /[\u0000-\u001f\u007f<>"'`]/.test(value);
@@ -290,7 +209,7 @@ function normalizeIndicator(value) {
         return "";
       }
 
-      return url.href;
+      return url.hostname.toLowerCase();
     } catch {
       return "";
     }
@@ -303,30 +222,6 @@ function normalizeIndicator(value) {
   return trimmed;
 }
 
-function extractDomainsAndUrls(text) {
-  const found = new Set();
-  const urlRegex = /\bhttps?:\/\/[^\s"'<>|)]+/gi;
-  const domainRegex = /\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}\b/g;
-
-  for (const match of text.matchAll(urlRegex)) {
-    const normalized = normalizeIndicator(match[0]);
-
-    if (normalized) {
-      found.add(normalized);
-    }
-  }
-
-  for (const match of text.matchAll(domainRegex)) {
-    const normalized = normalizeIndicator(match[0]);
-
-    if (normalized) {
-      found.add(normalized);
-    }
-  }
-
-  return [...found].sort();
-}
-
 function truncateText(value) {
   if (value.length <= MAX_DISPLAY_TEXT) {
     return value;
@@ -335,8 +230,8 @@ function truncateText(value) {
   return `${value.slice(0, MAX_DISPLAY_TEXT)}\n\n[truncated ${value.length - MAX_DISPLAY_TEXT} characters]`;
 }
 
-function setLogMeta(timestamp) {
-  const metaEl = document.getElementById("log-meta");
+function setCurrentMeta(timestamp) {
+  const metaEl = document.getElementById("current-meta");
   const latestLink = document.createElement("a");
   const logLink = document.createElement("a");
 
@@ -395,72 +290,11 @@ function formatTimestamp(value) {
   ].join("");
 }
 
-async function loadLiveValue() {
-  const resultEl = document.getElementById("live-result");
-  const metaEl = document.getElementById("live-meta");
-  const payloadEl = document.getElementById("payload");
-
-  try {
-    const body = {
-      jsonrpc: "2.0",
-      method: "eth_call",
-      params: [
-        {
-          to: CONTRACT,
-          data: CALLDATA
-        },
-        "latest"
-      ],
-      id: 1
-    };
-
-    const res = await fetch(RPC_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!res.ok) {
-      throw new Error(`RPC HTTP error: ${res.status}`);
-    }
-
-    const json = await res.json();
-
-    if (json.error) {
-      throw new Error(JSON.stringify(json.error));
-    }
-
-    const abiBytes = hexToBytes(json.result);
-    const payload = decodeAbiDynamicSingle(abiBytes);
-    const decoded = utf8Decode(payload);
-    let combinedText = decoded;
-
-    if (decoded.includes("|")) {
-      const parts = decoded.split("|");
-
-      if (parts.length >= 2) {
-        combinedText += "\n" + tryBase64Decode(parts[1]);
-      }
-    }
-
-    const found = extractDomainsAndUrls(combinedText);
-    renderDomain(resultEl, found[0] || "");
-    metaEl.textContent = `${found.length} domain/URL value(s) found from ${CONTRACT}`;
-    payloadEl.textContent = truncateText(decoded);
-  } catch (err) {
-    resultEl.className = "value bad";
-    resultEl.textContent = `Error: ${err.message}`;
-    metaEl.textContent = "";
-    payloadEl.textContent = "Unable to load decoded payload.";
-  }
-}
-
-async function loadLatestLog() {
-  const resultEl = document.getElementById("log-result");
-  const metaEl = document.getElementById("log-meta");
+async function loadLatest() {
+  const resultEl = document.getElementById("current-result");
+  const payloadHashEl = document.getElementById("payload-hash");
+  const payloadMetaEl = document.getElementById("payload-meta");
+  const metadataEl = document.getElementById("metadata");
 
   try {
     const res = await fetch(`latest.json?ts=${Date.now()}`, {
@@ -476,16 +310,31 @@ async function loadLatestLog() {
       ? latest.indicators[0] || ""
       : "";
     renderDomain(resultEl, normalizeIndicator(latestIndicator));
-    setLogMeta(latest.timestamp);
+    setCurrentMeta(latest.timestamp);
+
+    payloadHashEl.className = "value";
+    payloadHashEl.textContent = latest.payload_sha256 || "No payload hash";
+
+    const hashLink = document.createElement("a");
+    hashLink.href = "latest_payload_sha256.txt";
+    hashLink.textContent = "latest_payload_sha256.txt";
+    payloadMetaEl.replaceChildren(
+      document.createTextNode(`${latest.payload_len || 0} decoded payload bytes · `),
+      hashLink
+    );
+
+    metadataEl.textContent = truncateText(JSON.stringify(latest, null, 2));
   } catch (err) {
     resultEl.className = "value bad";
     resultEl.textContent = `Error: ${err.message}`;
-    setLogMeta("");
+    payloadHashEl.className = "value bad";
+    payloadHashEl.textContent = "Unable to load metadata.";
+    metadataEl.textContent = "Unable to load latest.json.";
+    setCurrentMeta("");
   }
 }
 
-loadLiveValue();
-loadLatestLog();
+loadLatest();
 </script>
 </body>
 </html>
