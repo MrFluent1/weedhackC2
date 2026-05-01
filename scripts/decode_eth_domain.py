@@ -7,11 +7,15 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 RPC_URL = "https://ethereum-rpc.publicnode.com"
 CONTRACT = "0x1280a841Fbc1F883365d3C83122260E0b2995B74"
 CALLDATA = "0xce6d41de"
+MAX_INDICATOR_LENGTH = 2048
+DOMAIN_RE = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$")
+UNSAFE_TEXT_RE = re.compile(r"[\x00-\x1f\x7f<>\"'`]")
 
 
 def eth_call() -> str:
@@ -111,6 +115,33 @@ def try_base64_decode(s: str) -> str:
         return ""
 
 
+def normalize_indicator(value: str) -> str:
+    cleaned = value.rstrip(".,;:").strip()
+
+    if (
+        not cleaned
+        or len(cleaned) > MAX_INDICATOR_LENGTH
+        or UNSAFE_TEXT_RE.search(cleaned)
+    ):
+        return ""
+
+    if cleaned.lower().startswith(("http://", "https://")):
+        parsed = urlparse(cleaned)
+
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return ""
+
+        if not DOMAIN_RE.match(parsed.hostname):
+            return ""
+
+        return cleaned
+
+    if not DOMAIN_RE.match(cleaned):
+        return ""
+
+    return cleaned
+
+
 def extract_domains_and_urls(text: str) -> list[str]:
     found = set()
 
@@ -118,10 +149,16 @@ def extract_domains_and_urls(text: str) -> list[str]:
     domain_re = re.compile(r"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}\b")
 
     for item in url_re.findall(text):
-        found.add(item.rstrip(".,;:"))
+        normalized = normalize_indicator(item)
+
+        if normalized:
+            found.add(normalized)
 
     for item in domain_re.findall(text):
-        found.add(item.rstrip(".,;:"))
+        normalized = normalize_indicator(item)
+
+        if normalized:
+            found.add(normalized)
 
     return sorted(found)
 
