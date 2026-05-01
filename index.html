@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>ETH Contract Domain Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ySqv2RyYQMu0nvUHapKRXjG24kErrI8MYu0ubVISNzo='; style-src 'sha256-1HC27TBWtHcLqXvmA6H0jWLlKfZNh8XDpr/Ue0JaogE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-dPzvZq3QRSONx8AhWMO3LPuH83vb3sOyd1oqpBOFHgY='; style-src 'sha256-0ee+tD6rxvRgR/GCPpgQm9jJsO3CyrVtIohlq4AT7Ck='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" />
   <meta name="referrer" content="no-referrer" />
 
   <style>
@@ -20,7 +20,6 @@
       --accent: #6fd6b4;
       --bad: #ff7777;
       --warn: #ffcc66;
-      --ok: #79d38a;
     }
 
     * {
@@ -106,10 +105,6 @@
 
     .warn {
       color: var(--warn);
-    }
-
-    .ok {
-      color: var(--ok);
     }
 
     .summary {
@@ -201,25 +196,11 @@ function normalizeIndicator(value) {
     return "";
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const url = new URL(trimmed);
-
-      if (!["http:", "https:"].includes(url.protocol) || !url.hostname) {
-        return "";
-      }
-
-      return url.hostname.toLowerCase();
-    } catch {
-      return "";
-    }
-  }
-
   if (!/^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$/.test(trimmed)) {
     return "";
   }
 
-  return trimmed;
+  return trimmed.toLowerCase();
 }
 
 function truncateText(value) {

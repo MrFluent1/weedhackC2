@@ -341,25 +341,6 @@ def write_latest(
     return True
 
 
-def write_empty_log_if_missing() -> None:
-    log_path = Path("domains.log")
-
-    if not log_path.exists():
-        row = json.dumps(
-            {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "indicator": None,
-                "indicator_type": None,
-                "source": "eth_call",
-                "contract": CONTRACT,
-                "calldata": CALLDATA,
-                "note": "No domain or URL extracted",
-            },
-            sort_keys=True,
-        )
-        log_path.write_text(row + "\n", encoding="utf-8")
-
-
 def main() -> None:
     hx = eth_call()
 
@@ -389,7 +370,6 @@ def main() -> None:
 
     log_changed = append_log(records)
     latest_changed = write_latest(records, payload, field2_metadata)
-    write_empty_log_if_missing()
 
     print(f"Decoded payload length: {len(payload)}")
     print(f"Extracted indicators: {len(records)}")
