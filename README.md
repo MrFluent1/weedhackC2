@@ -8,7 +8,7 @@ The page reads an Ethereum smart contract, decodes the returned ABI string, extr
 
 The observed Weedhack samples use a staged, signed C2 discovery model rather than a single hardcoded attacker host. The `dev.majanito` and `com.example` families rely on embedded public DNS-over-HTTPS endpoints and a large statically recoverable set of Ethereum RPC endpoints to perform `eth_call` requests against contract `0x1280a841Fbc1F883365d3C83122260E0b2995B74`.
 
-The returned `value|signature` text is ABI-decoded and RSA-verified by the malware before being used as the next-stage base URL. From an offline-decoded response, the root signed base URL resolved to `https://whpayment.ru`, which is then used for downstream paths such as handler delivery and module retrieval.
+The returned `value|signature` text is ABI-decoded and RSA-verified by the malware before being used as the next-stage base URL. From an offline-decoded response, the root signed base URL resolved to `whpayment.ru` and `friendlydomain.ru` since I began working on this project, which is then used for downstream paths such as handler delivery and module retrieval.
 
 The key point is that the malware's C2 is abstracted behind public RPC infrastructure and signed configuration, but the retrieval chain itself is statically exposed and recoverable offline. This project focuses on tracking that contract-backed domain indicator. It does not contain malware, payload code, exploit code, or tooling for interacting with infected systems.
 
