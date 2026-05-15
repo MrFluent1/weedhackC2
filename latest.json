@@ -3,19 +3,19 @@
   "contract": "0x1280a841Fbc1F883365d3C83122260E0b2995B74",
   "field2_base64_valid": true,
   "field2_decoded_len": 256,
-  "field2_decoded_sha256": "3165df306ce86ca798d41fec973b85b8bf05086b87c246bd490fe3299c62280b",
+  "field2_decoded_sha256": "5fac5152da94ea524fd21e3a77fdd0784573864c319bbfbc91b56cb6422af52c",
   "indicators": [
-    "whpayment.ru"
+    "whbackend.ru"
   ],
   "payload_len": 365,
-  "payload_sha256": "7a615f4fdc059941de4bcd78c8f890a3925c5689893ba2b733da3b0a33db884c",
+  "payload_sha256": "f039fc09a98adc01e9a1d640ba58bb3a757a13e6fe62993ddf5db6d92e58eb7e",
   "records": [
     {
-      "indicator": "whpayment.ru",
+      "indicator": "whbackend.ru",
       "indicator_type": "domain",
-      "source_url": "https://whpayment.ru"
+      "source_url": "https://whbackend.ru"
     }
   ],
   "source": "eth_call",
-  "timestamp": "2026-05-01T02:47:18.086183+00:00"
+  "timestamp": "2026-05-15T21:30:12.123449+00:00"
 }
