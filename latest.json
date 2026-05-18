@@ -3,19 +3,19 @@
   "contract": "0x1280a841Fbc1F883365d3C83122260E0b2995B74",
   "field2_base64_valid": true,
   "field2_decoded_len": 256,
-  "field2_decoded_sha256": "5fac5152da94ea524fd21e3a77fdd0784573864c319bbfbc91b56cb6422af52c",
+  "field2_decoded_sha256": "6ba1c616c2a291b0aa6a096a50ae131d341ac200b1c1b00e81da173dd54b842a",
   "indicators": [
-    "whbackend.ru"
+    "falseflag1.ru"
   ],
-  "payload_len": 365,
-  "payload_sha256": "f039fc09a98adc01e9a1d640ba58bb3a757a13e6fe62993ddf5db6d92e58eb7e",
+  "payload_len": 366,
+  "payload_sha256": "989e480b143b7718a0233b875f4931720494fbed5099981d4392fceb28218af9",
   "records": [
     {
-      "indicator": "whbackend.ru",
+      "indicator": "falseflag1.ru",
       "indicator_type": "domain",
-      "source_url": "https://whbackend.ru"
+      "source_url": "https://falseflag1.ru"
     }
   ],
   "source": "eth_call",
-  "timestamp": "2026-05-14T17:29:56.337679+00:00"
+  "timestamp": "2026-05-18T14:25:30.261662+00:00"
 }
