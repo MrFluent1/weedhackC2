@@ -3,19 +3,19 @@
   "contract": "0x1280a841Fbc1F883365d3C83122260E0b2995B74",
   "field2_base64_valid": true,
   "field2_decoded_len": 256,
-  "field2_decoded_sha256": "6ba1c616c2a291b0aa6a096a50ae131d341ac200b1c1b00e81da173dd54b842a",
+  "field2_decoded_sha256": "735a34ca290f920c13ae8b8ff234686cf8d985cc634ad2ad3e9c70e53b9daf92",
   "indicators": [
-    "falseflag1.ru"
+    "fucktermedfir.st"
   ],
-  "payload_len": 366,
-  "payload_sha256": "989e480b143b7718a0233b875f4931720494fbed5099981d4392fceb28218af9",
+  "payload_len": 369,
+  "payload_sha256": "6bd59161affc13b04c8799a7b2e468c33ab9c16241038e1624d0b8861911afec",
   "records": [
     {
-      "indicator": "falseflag1.ru",
+      "indicator": "fucktermedfir.st",
       "indicator_type": "domain",
-      "source_url": "https://falseflag1.ru"
+      "source_url": "https://fucktermedfir.st"
     }
   ],
   "source": "eth_call",
-  "timestamp": "2026-05-18T14:25:30.261662+00:00"
+  "timestamp": "2026-05-19T22:55:41.677521+00:00"
 }
